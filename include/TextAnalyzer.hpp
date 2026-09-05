@@ -27,6 +27,7 @@ namespace Etas {
  * - Additional useful tools: frequency analysis, top-N words, trim/startsWith/endsWith
  * - Marked noexcept where appropriate and optimized loops
  * - Header-only, C++17 compatible
+ * - Output-iterator variants for zero-allocation transformations
  */
 class TextAnalyzer {
 public:
@@ -102,7 +103,13 @@ public:
     }
 
     // Owning version for compatibility
-    std::vector<std::string> splitByNewline() const { auto v = splitByNewlineView(); std::vector<std::string> out; out.reserve(v.size()); for (auto &s: v) out.emplace_back(s); return out; }
+    std::vector<std::string> splitByNewline() const {
+        auto v = splitByNewlineView();
+        std::vector<std::string> out;
+        out.reserve(v.size());
+        for (auto &s: v) out.emplace_back(s);
+        return out;
+    }
 
     // Tokenize by any whitespace (view variant - no allocations)
     std::vector<sv> tokenizeByWhitespaceView() const noexcept {
@@ -124,7 +131,13 @@ public:
     }
 
     // Owning version
-    std::vector<std::string> tokenizeByWhitespace() const { auto v = tokenizeByWhitespaceView(); std::vector<std::string> out; out.reserve(v.size()); for (auto &s: v) out.emplace_back(s); return out; }
+    std::vector<std::string> tokenizeByWhitespace() const {
+        auto v = tokenizeByWhitespaceView();
+        std::vector<std::string> out;
+        out.reserve(v.size());
+        for (auto &s: v) out.emplace_back(s);
+        return out;
+    }
 
     // ------------------------------------------------------------------
     // 2. SEARCH & ANALYSIS FUNCTIONS
@@ -174,18 +187,68 @@ public:
         std::string out;
         out.reserve(text_.size());
         bool lastSpace = false;
-        for (unsigned char uc : svToUnsignedChars(text_)) {
+        const char* ptr = text_.data();
+        size_t start = 0;
+        size_t end = text_.size();
+
+        // Skip leading whitespace
+        while (start < end && std::isspace(static_cast<unsigned char>(ptr[start]))) {
+            ++start;
+        }
+
+        // Skip trailing whitespace
+        while (end > start && std::isspace(static_cast<unsigned char>(ptr[end - 1]))) {
+            --end;
+        }
+
+        for (size_t i = start; i < end; ++i) {
+            unsigned char uc = static_cast<unsigned char>(ptr[i]);
             if (std::isspace(uc)) {
-                if (!lastSpace) { out.push_back(' '); lastSpace = true; }
+                if (!lastSpace) {
+                    out.push_back(' ');
+                    lastSpace = true;
+                }
             } else {
                 out.push_back(static_cast<char>(uc));
                 lastSpace = false;
             }
         }
-        // trim
-        if (!out.empty() && out.front() == ' ') out.erase(out.begin());
-        if (!out.empty() && out.back() == ' ') out.pop_back();
         return out;
+    }
+
+    // Zero-allocation variant using output iterator
+    template <typename OutputIterator>
+    OutputIterator cleanWhitespaceTo(OutputIterator result) const noexcept {
+        if (text_.empty()) return result;
+
+        const char* ptr = text_.data();
+        size_t start = 0;
+        size_t end = text_.size();
+
+        // Skip leading whitespace
+        while (start < end && std::isspace(static_cast<unsigned char>(ptr[start]))) {
+            ++start;
+        }
+
+        // Skip trailing whitespace
+        while (end > start && std::isspace(static_cast<unsigned char>(ptr[end - 1]))) {
+            --end;
+        }
+
+        bool lastSpace = false;
+        for (size_t i = start; i < end; ++i) {
+            unsigned char uc = static_cast<unsigned char>(ptr[i]);
+            if (std::isspace(uc)) {
+                if (!lastSpace) {
+                    *result++ = ' ';
+                    lastSpace = true;
+                }
+            } else {
+                *result++ = static_cast<char>(uc);
+                lastSpace = false;
+            }
+        }
+        return result;
     }
 
     std::string toLower() const {
@@ -194,10 +257,32 @@ public:
         return res;
     }
 
+    // Zero-allocation variant using output iterator
+    template <typename OutputIterator>
+    OutputIterator toLowerTo(OutputIterator result) const noexcept {
+        const char* ptr = text_.data();
+        const size_t len = text_.size();
+        for (size_t i = 0; i < len; ++i) {
+            *result++ = static_cast<char>(std::tolower(static_cast<unsigned char>(ptr[i])));
+        }
+        return result;
+    }
+
     std::string toUpper() const {
         std::string res(text_);
         std::transform(res.begin(), res.end(), res.begin(), [](unsigned char c){ return static_cast<char>(std::toupper(c)); });
         return res;
+    }
+
+    // Zero-allocation variant using output iterator
+    template <typename OutputIterator>
+    OutputIterator toUpperTo(OutputIterator result) const noexcept {
+        const char* ptr = text_.data();
+        const size_t len = text_.size();
+        for (size_t i = 0; i < len; ++i) {
+            *result++ = static_cast<char>(std::toupper(static_cast<unsigned char>(ptr[i])));
+        }
+        return result;
     }
 
     std::string replaceAll(sv oldStr, sv newStr) const {
@@ -280,21 +365,10 @@ private:
     static std::string toLowerString(sv s) {
         std::string out;
         out.resize(s.size());
-        for (size_t i = 0; i < s.size(); ++i) out[i] = static_cast<char>(std::tolower(static_cast<unsigned char>(s[i])));
+        for (size_t i = 0; i < s.size(); ++i) {
+            out[i] = static_cast<char>(std::tolower(static_cast<unsigned char>(s[i])));
+        }
         return out;
-    }
-
-    // helper: iterate as unsigned chars
-    static std::vector<unsigned char> svToUnsignedChars(sv s) {
-        std::vector<unsigned char> v;
-        v.reserve(s.size());
-        for (unsigned char c : svToBytes(s)) v.push_back(c);
-        return v;
-    }
-
-    // helper: raw bytes of the view
-    static std::vector<unsigned char> svToBytes(sv s) {
-        return std::vector<unsigned char>(reinterpret_cast<const unsigned char*>(s.data()), reinterpret_cast<const unsigned char*>(s.data() + s.size()));
     }
 
 private:
