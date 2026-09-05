@@ -28,6 +28,8 @@ namespace Etas {
  * - Marked noexcept where appropriate and optimized loops
  * - Header-only, C++17 compatible
  * - Output-iterator variants for zero-allocation transformations
+ * - Safe type casting (unsigned char) for all character functions
+ * - Allocation-free case-insensitive search using std::search
  */
 class TextAnalyzer {
 public:
@@ -39,7 +41,7 @@ public:
     // ------------------------------------------------------------------
 
     // Split into substrings (owning strings) - kept for compatibility
-    std::vector<std::string> split(sv delimiter) const {
+    [[nodiscard]] std::vector<std::string> split(sv delimiter) const {
         if (text_.empty()) return {};
         if (delimiter.empty()) return { std::string(text_) };
 
@@ -58,7 +60,7 @@ public:
     }
 
     // Split into string_views (no allocations, fastest)
-    std::vector<sv> splitView(sv delimiter) const noexcept {
+    [[nodiscard]] std::vector<sv> splitView(sv delimiter) const noexcept {
         std::vector<sv> result;
         if (text_.empty()) return result;
         if (delimiter.empty()) { result.push_back(text_); return result; }
@@ -77,7 +79,7 @@ public:
     }
 
     // Split by newline, handling \n, \r\n, \r efficiently and returning views
-    std::vector<sv> splitByNewlineView() const noexcept {
+    [[nodiscard]] std::vector<sv> splitByNewlineView() const noexcept {
         std::vector<sv> lines;
         const char* data = text_.data();
         size_t len = text_.size();
@@ -103,7 +105,7 @@ public:
     }
 
     // Owning version for compatibility
-    std::vector<std::string> splitByNewline() const {
+    [[nodiscard]] std::vector<std::string> splitByNewline() const {
         auto v = splitByNewlineView();
         std::vector<std::string> out;
         out.reserve(v.size());
@@ -112,7 +114,7 @@ public:
     }
 
     // Tokenize by any whitespace (view variant - no allocations)
-    std::vector<sv> tokenizeByWhitespaceView() const noexcept {
+    [[nodiscard]] std::vector<sv> tokenizeByWhitespaceView() const noexcept {
         std::vector<sv> tokens;
         const char* ptr = text_.data();
         size_t len = text_.size();
@@ -121,17 +123,17 @@ public:
         size_t i = 0;
         while (i < len) {
             // skip whitespace
-            while (i < len && std::isspace(static_cast<unsigned char>(ptr[i]))) ++i;
+            while (i < len && isWhitespace(ptr[i])) ++i;
             if (i >= len) break;
             size_t start = i;
-            while (i < len && !std::isspace(static_cast<unsigned char>(ptr[i]))) ++i;
+            while (i < len && !isWhitespace(ptr[i])) ++i;
             tokens.emplace_back(ptr + start, i - start);
         }
         return tokens;
     }
 
     // Owning version
-    std::vector<std::string> tokenizeByWhitespace() const {
+    [[nodiscard]] std::vector<std::string> tokenizeByWhitespace() const {
         auto v = tokenizeByWhitespaceView();
         std::vector<std::string> out;
         out.reserve(v.size());
@@ -144,7 +146,7 @@ public:
     // ------------------------------------------------------------------
 
     // Find all occurrences (returns indices)
-    std::vector<size_t> findAll(sv search) const noexcept {
+    [[nodiscard]] std::vector<size_t> findAll(sv search) const noexcept {
         std::vector<size_t> positions;
         if (search.empty() || text_.empty()) return positions;
         positions.reserve(16);
@@ -156,17 +158,23 @@ public:
         return positions;
     }
 
-    bool contains(sv sub) const noexcept { return !sub.empty() && !text_.empty() && text_.find(sub) != sv::npos; }
+    [[nodiscard]] bool contains(sv sub) const noexcept {
+        return !sub.empty() && !text_.empty() && text_.find(sub) != sv::npos;
+    }
 
-    bool containsCaseInsensitive(sv sub) const {
+    // Case-insensitive search with zero allocations using std::search
+    [[nodiscard]] bool containsCaseInsensitive(sv sub) const noexcept {
         if (sub.empty()) return true;
-        auto lt = toLowerString(text_);
-        auto ls = toLowerString(sub);
-        return lt.find(ls) != sv::npos;
+        if (text_.empty()) return sub.empty();
+
+        auto char_comp = [](char a, char b) noexcept {
+            return toLowerChar(a) == toLowerChar(b);
+        };
+        return std::search(text_.begin(), text_.end(), sub.begin(), sub.end(), char_comp) != text_.end();
     }
 
     // Count non-overlapping occurrences (safe and fast)
-    size_t count(sv sub) const noexcept {
+    [[nodiscard]] size_t count(sv sub) const noexcept {
         if (sub.empty() || text_.empty()) return 0;
         size_t cnt = 0;
         size_t pos = text_.find(sub, 0);
@@ -182,7 +190,7 @@ public:
     // ------------------------------------------------------------------
 
     // Remove duplicate whitespace (owning)
-    std::string cleanWhitespace() const {
+    [[nodiscard]] std::string cleanWhitespace() const {
         if (text_.empty()) return {};
         std::string out;
         out.reserve(text_.size());
@@ -192,24 +200,24 @@ public:
         size_t end = text_.size();
 
         // Skip leading whitespace
-        while (start < end && std::isspace(static_cast<unsigned char>(ptr[start]))) {
+        while (start < end && isWhitespace(ptr[start])) {
             ++start;
         }
 
         // Skip trailing whitespace
-        while (end > start && std::isspace(static_cast<unsigned char>(ptr[end - 1]))) {
+        while (end > start && isWhitespace(ptr[end - 1])) {
             --end;
         }
 
         for (size_t i = start; i < end; ++i) {
-            unsigned char uc = static_cast<unsigned char>(ptr[i]);
-            if (std::isspace(uc)) {
+            char c = ptr[i];
+            if (isWhitespace(c)) {
                 if (!lastSpace) {
                     out.push_back(' ');
                     lastSpace = true;
                 }
             } else {
-                out.push_back(static_cast<char>(uc));
+                out.push_back(c);
                 lastSpace = false;
             }
         }
@@ -226,34 +234,35 @@ public:
         size_t end = text_.size();
 
         // Skip leading whitespace
-        while (start < end && std::isspace(static_cast<unsigned char>(ptr[start]))) {
+        while (start < end && isWhitespace(ptr[start])) {
             ++start;
         }
 
         // Skip trailing whitespace
-        while (end > start && std::isspace(static_cast<unsigned char>(ptr[end - 1]))) {
+        while (end > start && isWhitespace(ptr[end - 1])) {
             --end;
         }
 
         bool lastSpace = false;
         for (size_t i = start; i < end; ++i) {
-            unsigned char uc = static_cast<unsigned char>(ptr[i]);
-            if (std::isspace(uc)) {
+            char c = ptr[i];
+            if (isWhitespace(c)) {
                 if (!lastSpace) {
                     *result++ = ' ';
                     lastSpace = true;
                 }
             } else {
-                *result++ = static_cast<char>(uc);
+                *result++ = c;
                 lastSpace = false;
             }
         }
         return result;
     }
 
-    std::string toLower() const {
+    [[nodiscard]] std::string toLower() const {
         std::string res(text_);
-        std::transform(res.begin(), res.end(), res.begin(), [](unsigned char c){ return static_cast<char>(std::tolower(c)); });
+        std::transform(res.begin(), res.end(), res.begin(), 
+                      [](char c) { return toLowerChar(c); });
         return res;
     }
 
@@ -263,14 +272,15 @@ public:
         const char* ptr = text_.data();
         const size_t len = text_.size();
         for (size_t i = 0; i < len; ++i) {
-            *result++ = static_cast<char>(std::tolower(static_cast<unsigned char>(ptr[i])));
+            *result++ = toLowerChar(ptr[i]);
         }
         return result;
     }
 
-    std::string toUpper() const {
+    [[nodiscard]] std::string toUpper() const {
         std::string res(text_);
-        std::transform(res.begin(), res.end(), res.begin(), [](unsigned char c){ return static_cast<char>(std::toupper(c)); });
+        std::transform(res.begin(), res.end(), res.begin(), 
+                      [](char c) { return toUpperChar(c); });
         return res;
     }
 
@@ -280,12 +290,12 @@ public:
         const char* ptr = text_.data();
         const size_t len = text_.size();
         for (size_t i = 0; i < len; ++i) {
-            *result++ = static_cast<char>(std::toupper(static_cast<unsigned char>(ptr[i])));
+            *result++ = toUpperChar(ptr[i]);
         }
         return result;
     }
 
-    std::string replaceAll(sv oldStr, sv newStr) const {
+    [[nodiscard]] std::string replaceAll(sv oldStr, sv newStr) const {
         if (oldStr.empty()) return std::string(text_);
         std::string out;
         out.reserve(text_.size());
@@ -306,7 +316,8 @@ public:
     // ------------------------------------------------------------------
 
     // Returns word frequency map (owning strings). This is safe and simple.
-    std::unordered_map<std::string, size_t> wordFrequencies(bool caseInsensitive = false) const {
+    [[nodiscard]] std::unordered_map<std::string, size_t> 
+    wordFrequencies(bool caseInsensitive = false) const {
         std::unordered_map<std::string, size_t> freq;
         auto tokens = tokenizeByWhitespaceView();
         freq.reserve(tokens.size() * 2 + 1);
@@ -323,50 +334,87 @@ public:
     }
 
     // Return top N words (owning strings) - efficient for large maps
-    std::vector<std::pair<std::string, size_t>> topNWords(size_t N = 10, bool caseInsensitive = false) const {
+    [[nodiscard]] std::vector<std::pair<std::string, size_t>> 
+    topNWords(size_t N = 10, bool caseInsensitive = false) const {
         auto freq = wordFrequencies(caseInsensitive);
         std::vector<std::pair<std::string, size_t>> vec;
         vec.reserve(freq.size());
         for (auto &p : freq) vec.emplace_back(std::move(p));
+        
         if (N == 0 || vec.empty()) return {};
         if (vec.size() <= N) {
-            std::sort(vec.begin(), vec.end(), [](auto &a, auto &b){ return a.second > b.second; });
+            std::sort(vec.begin(), vec.end(), [](const auto &a, const auto &b){
+                return a.second > b.second;
+            });
             return vec;
         }
-        std::nth_element(vec.begin(), vec.begin() + N, vec.end(), [](auto &a, auto &b){ return a.second > b.second; });
+        
+        std::nth_element(vec.begin(), vec.begin() + N, vec.end(), 
+                        [](const auto &a, const auto &b){ return a.second > b.second; });
         vec.resize(N);
-        std::sort(vec.begin(), vec.end(), [](auto &a, auto &b){ return a.second > b.second; });
+        std::sort(vec.begin(), vec.end(), [](const auto &a, const auto &b){
+            return a.second > b.second;
+        });
         return vec;
     }
 
     // Trim helpers
-    sv trimView() const noexcept {
+    [[nodiscard]] sv trimView() const noexcept {
         size_t b = 0, e = text_.size();
-        while (b < e && std::isspace(static_cast<unsigned char>(text_[b]))) ++b;
-        while (e > b && std::isspace(static_cast<unsigned char>(text_[e-1]))) --e;
+        while (b < e && isWhitespace(text_[b])) ++b;
+        while (e > b && isWhitespace(text_[e-1])) --e;
         return text_.substr(b, e - b);
     }
 
-    std::string trim() const { auto v = trimView(); return std::string(v); }
+    [[nodiscard]] std::string trim() const {
+        auto v = trimView();
+        return std::string(v);
+    }
 
-    bool startsWith(sv prefix) const noexcept { return prefix.size() <= text_.size() && text_.compare(0, prefix.size(), prefix) == 0; }
-    bool endsWith(sv suffix) const noexcept { return suffix.size() <= text_.size() && text_.compare(text_.size()-suffix.size(), suffix.size(), suffix) == 0; }
+    [[nodiscard]] bool startsWith(sv prefix) const noexcept {
+        return prefix.size() <= text_.size() && 
+               text_.compare(0, prefix.size(), prefix) == 0;
+    }
+
+    [[nodiscard]] bool endsWith(sv suffix) const noexcept {
+        return suffix.size() <= text_.size() && 
+               text_.compare(text_.size() - suffix.size(), suffix.size(), suffix) == 0;
+    }
 
     // ------------------------------------------------------------------
     // 5. UTILITY
     // ------------------------------------------------------------------
 
-    size_t length() const noexcept { return text_.size(); }
-    bool isEmpty() const noexcept { return text_.empty(); }
-    sv raw() const noexcept { return text_; }
+    [[nodiscard]] size_t length() const noexcept { return text_.size(); }
+    [[nodiscard]] bool isEmpty() const noexcept { return text_.empty(); }
+    [[nodiscard]] sv raw() const noexcept { return text_; }
 
 private:
-    // helper: produce lowercase string from a view
+    // ------------------------------------------------------------------
+    // PRIVATE HELPERS - Safe character operations with unsigned char cast
+    // ------------------------------------------------------------------
+
+    // Safe whitespace check with unsigned char cast
+    static constexpr bool isWhitespace(char c) noexcept {
+        return std::isspace(static_cast<unsigned char>(c)) != 0;
+    }
+
+    // Safe lowercase conversion with unsigned char cast
+    static constexpr char toLowerChar(char c) noexcept {
+        return static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    }
+
+    // Safe uppercase conversion with unsigned char cast
+    static constexpr char toUpperChar(char c) noexcept {
+        return static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+    }
+
+    // Helper: produce lowercase string from a view with safe casting
     static std::string toLowerString(sv s) {
         std::string out;
         out.resize(s.size());
         for (size_t i = 0; i < s.size(); ++i) {
-            out[i] = static_cast<char>(std::tolower(static_cast<unsigned char>(s[i])));
+            out[i] = toLowerChar(s[i]);
         }
         return out;
     }
