@@ -41,7 +41,7 @@ public:
         should_log_to_file.store(true, std::memory_order_relaxed);
     }
 
-    // Ultra-fast and ultra-safe logging method
+    // logging method
     void log(LogLevel level, std::string_view function_name, std::string_view message) {
         std::string_view level_str;
         switch (level) {
