@@ -22,7 +22,7 @@
 namespace Etas {
 
 /**
- * Ultra-fast, safer and more feature-rich TextAnalyzer
+ *   fast, safer and more feature-rich TextAnalyzer
  * - Minimizes allocations by offering string_view-based accessors
  * - Additional useful tools: frequency analysis, top-N words, trim/startsWith/endsWith
  * - Marked noexcept where appropriate and optimized loops
