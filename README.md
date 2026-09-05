@@ -6,7 +6,7 @@ A high-performance, lightweight, and header-only C++17 utility library optimized
 
 The library is split into three main core modules:
 
-*   **Text Analysis (`TextAnalyzer.hpp`)**: High-performance, zero-copy string parsing, tokenization, and multi-pattern search leveraging `std::string_view`.
+*   **Text Analysis (`TextAnalyzer.hpp`)**: High-performance, zero-copy string parsing, tokenization, and multi-pattern search leveraging.
 *   **Data & Statistics (`data_utils.hpp`)**: Essential mathematical utilities including sample variance, standard deviation, quantiles, linear regression, and Spearman rank correlation.
 *   **Logging Framework (`Dbg.hpp`)**: An ultra-fast, thread-safe Meyers Singleton logger designed to handle concurrent asynchronous logging to both standard error and file streams.
 
