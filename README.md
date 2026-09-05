@@ -66,7 +66,7 @@ void doSomething() {
 
 ##  Requirements
 
-*   **Compiler**: C++17 compliant compiler (GCC 7+, Clang 5+, or MSVC 2017+).
+*   **Compiler**: C++17 compliant compiler (G++ 7+, Clang 5+, or MSVC 2017+).
 *   **Platforms**: Fully compatible with both **Windows** and **Linux**.
 *   **Installation**: Since this library is header-only, simply copy the include files into your project directory.
 
