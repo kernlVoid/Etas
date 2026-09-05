@@ -11,7 +11,7 @@
 
 namespace Etas {
 
-// --------------------- Statistik ---------------------
+// --------------------- Statistics ---------------------
 
 inline double mean(const std::vector<double>& v)
 {
@@ -142,7 +142,7 @@ inline double rank_correlation(const std::vector<double>& x, const std::vector<d
     return correlation(rankx, ranky);
 }
 
-// --------------------- Lineare Regression (y = a + b*x) ---------------------
+// --------------------- Linear Regression (y = a + b*x) ---------------------
 
 struct LinearRegression { double slope; double intercept; };
 
@@ -163,7 +163,7 @@ inline LinearRegression linear_fit(const std::vector<double>& x, const std::vect
     return {b, a};
 }
 
-// --------------------- Histogramm ---------------------
+// --------------------- Histogram ---------------------
 
 inline std::vector<std::size_t> histogram(const std::vector<double>& v, std::size_t bins)
 {
